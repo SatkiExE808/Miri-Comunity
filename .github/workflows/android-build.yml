@@ -13,6 +13,9 @@ concurrency:
   group: android-build-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build APK
