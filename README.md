@@ -33,7 +33,34 @@ Then scan the QR code with the **Expo Go** app on your phone, or press `a` (Andr
 
 All data is stored on-device via AsyncStorage — uninstalling the app clears it.
 
-## Building an APK
+## Download the APK from GitHub (easiest)
+
+Every push to `main` or the dev branch triggers a GitHub Actions workflow that builds an Android APK in the cloud and attaches it to the run.
+
+**To download the latest APK:**
+
+1. Open the repository on GitHub.
+2. Click the **Actions** tab.
+3. Click the latest **Build Android APK** run (green checkmark).
+4. Scroll to **Artifacts** at the bottom and click `miri-comunity-apk` to download.
+5. Unzip → you get `miri-comunity-<sha>.apk`. Copy it to your Android phone, tap it, and allow "Install from unknown sources".
+
+**To trigger a build manually** (e.g. without pushing new code):
+
+- Actions tab → **Build Android APK** workflow → **Run workflow** → pick a branch → **Run workflow**.
+
+**To publish a versioned release:**
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow will build the APK and create a GitHub **Release** with the APK attached. Anyone (including non-developers) can then download it from the Releases page without a GitHub account.
+
+> Note: the APK is signed with Android's debug keystore, which is fine for sideloading and testing. To publish to the Play Store you'll need a real signing key — that's handled by the `production` EAS profile (see below).
+
+## Building an APK locally with EAS (optional)
 
 Expo builds APKs through **EAS Build** (Expo Application Services). The first build sets up the project on Expo's side; after that it's a one-liner.
 
