@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Miri Comunity",
+    "slug": "miri-comunity",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "miricomunity",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0EA5A4"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.miri.comunity"
+    },
+    "android": {
+      "package": "com.miri.comunity",
+      "adaptiveIcon": {
+        "backgroundColor": "#0EA5A4"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Miri Comunity to access your photos so you can upload pictures of items you want to sell."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
