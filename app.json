@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "scheme": "miricomunity",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#0EA5A4"
@@ -29,9 +29,6 @@
           "photosPermission": "Allow Miri Comunity to access your photos so you can upload pictures of items you want to sell."
         }
       ]
-    ],
-    "experiments": {
-      "typedRoutes": true
-    }
+    ]
   }
 }
