@@ -75,7 +75,10 @@ jobs:
           OUT="miri-comunity-${SHORT_SHA}.apk"
           cp "$APK_PATH" "$OUT"
           echo "apk_name=$OUT" >> "$GITHUB_OUTPUT"
-          ls -lh "$OUT"
+          # Also produce a stable filename for tag-based releases so the
+          # /releases/latest/download/miri-comunity.apk URL stays valid.
+          cp "$APK_PATH" "miri-comunity.apk"
+          ls -lh "$OUT" miri-comunity.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -100,5 +103,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.find_apk.outputs.apk_name }}
+          files: |
+            ${{ steps.find_apk.outputs.apk_name }}
+            miri-comunity.apk
           generate_release_notes: true

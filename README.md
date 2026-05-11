@@ -2,6 +2,18 @@
 
 A mobile app for the Miri community: register an account, buy & sell items, send parcels or ask someone to help buy things for you, and book a motorcycle or car ride.
 
+## 📲 Download
+
+[![Download latest APK](https://img.shields.io/badge/Download-Latest%20APK-0EA5A4?style=for-the-badge&logo=android&logoColor=white)](https://github.com/SatkiExE808/Miri-Comunity/releases/latest/download/miri-comunity.apk)
+[![All releases](https://img.shields.io/badge/All%20releases-→-64748B?style=for-the-badge)](https://github.com/SatkiExE808/Miri-Comunity/releases)
+[![Build status](https://github.com/SatkiExE808/Miri-Comunity/actions/workflows/android-build.yml/badge.svg)](https://github.com/SatkiExE808/Miri-Comunity/actions/workflows/android-build.yml)
+
+- **Latest stable APK:** <https://github.com/SatkiExE808/Miri-Comunity/releases/latest/download/miri-comunity.apk>
+- **All versions / release notes:** <https://github.com/SatkiExE808/Miri-Comunity/releases>
+- **Newest build (from `main` / dev branch, unsigned debug-key):** open the [latest workflow run](https://github.com/SatkiExE808/Miri-Comunity/actions/workflows/android-build.yml) and scroll to *Artifacts → miri-comunity-apk*.
+
+After downloading, open the APK on your Android phone and allow "Install from unknown sources" when prompted.
+
 ## Stack
 
 - Expo (React Native) with TypeScript
