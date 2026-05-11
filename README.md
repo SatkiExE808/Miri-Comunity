@@ -33,6 +33,47 @@ Then scan the QR code with the **Expo Go** app on your phone, or press `a` (Andr
 
 All data is stored on-device via AsyncStorage — uninstalling the app clears it.
 
+## Building an APK
+
+Expo builds APKs through **EAS Build** (Expo Application Services). The first build sets up the project on Expo's side; after that it's a one-liner.
+
+### One-time setup
+
+```bash
+npm install
+npm install -g eas-cli      # install the EAS CLI
+eas login                   # sign in with your free Expo account
+eas build:configure         # links this project to your Expo account
+```
+
+`eas build:configure` will fill in a `projectId` under `expo.extra.eas` in `app.json`. Commit that change.
+
+### Build the APK (cloud — recommended)
+
+```bash
+npm run build:apk
+```
+
+This kicks off a cloud build using the `preview` profile in `eas.json` (which is set to `buildType: apk`). When it finishes, EAS prints a URL where you can download `application-<id>.apk` and install it on any Android device (enable "Install unknown apps" first).
+
+### Build the APK locally (optional)
+
+Only if you have Android Studio + JDK 17 installed:
+
+```bash
+npm run build:apk:local
+```
+
+The APK is written into the current directory.
+
+### Production (Play Store)
+
+The `production` profile in `eas.json` builds an `.aab` (Android App Bundle) which is what the Play Store requires:
+
+```bash
+eas build -p android --profile production
+```
+
 ## Next steps
 
 1. Replace `src/store/auth.tsx` and `src/store/data.tsx` with Supabase calls (auth, postgres tables, storage bucket for images).
