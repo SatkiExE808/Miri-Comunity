@@ -38,7 +38,7 @@ function timeRemaining(ts: number, now: number): string {
 
 export default function Transport() {
   const { user } = useAuth();
-  const { bookings, addBooking, setBookingStatus } = useData();
+  const { bookings, addBooking, setBookingStatus, acceptBooking } = useData();
   const [vehicle, setVehicle] = useState<Vehicle>('motorcycle');
   const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
@@ -65,6 +65,9 @@ export default function Transport() {
   }, [now, bookings, setBookingStatus]);
 
   const myBookings = bookings.filter((b) => b.userId === user?.id);
+  const openRequests = bookings.filter(
+    (b) => b.userId !== user?.id && b.status === 'pending',
+  );
 
   async function onSubmit() {
     if (!pickup.trim() || !dropoff.trim()) {
@@ -97,6 +100,7 @@ export default function Transport() {
         offerAmount,
         notes: notes.trim() || undefined,
         userId: user.id,
+        userName: user.name,
       });
       setPickup('');
       setDropoff('');
@@ -113,6 +117,18 @@ export default function Transport() {
       { text: 'Keep searching', style: 'cancel' },
       { text: 'Cancel ride', style: 'destructive', onPress: () => setBookingStatus(b.id, 'cancelled') },
     ]);
+  }
+
+  function confirmAccept(b: TransportBooking) {
+    if (!user) return;
+    Alert.alert(
+      'Accept this ride?',
+      `${b.pickup} → ${b.dropoff}\n${b.vehicle} · ${b.when}${b.offerAmount != null ? ` · RM ${b.offerAmount.toFixed(2)}` : ''}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Accept', onPress: () => acceptBooking(b.id, user.id, user.name) },
+      ],
+    );
   }
 
   return (
@@ -183,9 +199,75 @@ export default function Transport() {
               </View>
             )}
           </View>
+
+          <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.sm }}>
+              <Ionicons name="people-outline" size={16} color={colors.text} />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+                Open requests in Miri
+              </Text>
+              {openRequests.length > 0 && (
+                <View style={styles.countBadge}>
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>{openRequests.length}</Text>
+                </View>
+              )}
+            </View>
+            {openRequests.length === 0 ? (
+              <Text style={{ color: colors.muted }}>No open requests right now.</Text>
+            ) : (
+              <View style={{ gap: spacing.sm }}>
+                {openRequests.map((b) => (
+                  <OpenRequestRow key={b.id} booking={b} now={now} onAccept={() => confirmAccept(b)} />
+                ))}
+              </View>
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
+  );
+}
+
+function OpenRequestRow({ booking, now, onAccept }: { booking: TransportBooking; now: number; onAccept: () => void }) {
+  return (
+    <View style={styles.row}>
+      <View style={styles.headerRow}>
+        <View style={[styles.iconBubble, { backgroundColor: '#FEF3C7' }]}>
+          <Ionicons name={booking.vehicle === 'car' ? 'car-outline' : 'bicycle-outline'} size={20} color="#B45309" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontWeight: '700', color: colors.text }} numberOfLines={1}>
+            {booking.pickup} → {booking.dropoff}
+          </Text>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>
+            by {booking.userName || 'someone'} · {booking.vehicle} · {booking.when} · {booking.passengers} pax
+          </Text>
+        </View>
+        {booking.offerAmount != null && (
+          <View style={styles.offerPill}>
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>RM {booking.offerAmount.toFixed(2)}</Text>
+          </View>
+        )}
+      </View>
+
+      {booking.notes && (
+        <Text style={{ color: colors.muted, fontSize: 12, fontStyle: 'italic' }}>"{booking.notes}"</Text>
+      )}
+
+      <View style={styles.metaRow}>
+        <Text style={styles.metaText}>
+          <Ionicons name="time-outline" size={12} color={colors.muted} /> Requested {formatRelative(booking.createdAt, now)}
+        </Text>
+        <Text style={[styles.metaText, { color: colors.accent, fontWeight: '700' }]}>
+          Expires in {timeRemaining(booking.createdAt, now)}
+        </Text>
+      </View>
+
+      <Pressable onPress={onAccept} style={styles.acceptBtn}>
+        <Ionicons name="checkmark-circle" size={16} color="#fff" />
+        <Text style={{ color: '#fff', fontWeight: '700' }}>Accept ride</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -222,6 +304,15 @@ function BookingRow({ booking, now, onCancel }: { booking: TransportBooking; now
           </Text>
         )}
       </View>
+
+      {booking.status === 'accepted' && booking.acceptedByName && (
+        <View style={styles.acceptedBanner}>
+          <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+          <Text style={{ color: colors.success, fontWeight: '700', fontSize: 12 }}>
+            Accepted by {booking.acceptedByName}
+          </Text>
+        </View>
+      )}
 
       {isPending && (
         <Pressable onPress={onCancel} style={styles.cancelBtn}>
@@ -288,5 +379,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#fecaca',
     backgroundColor: '#fef2f2',
+  },
+  acceptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  acceptedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: '#f0fdf4',
+    borderRadius: radius.sm,
+  },
+  offerPill: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  countBadge: {
+    backgroundColor: colors.accent,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

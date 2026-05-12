@@ -36,8 +36,12 @@ export type TransportBooking = {
   notes?: string;
   offerAmount?: number;
   userId: string;
+  userName?: string;
   createdAt: number;
   status: BookingStatus;
+  acceptedBy?: string;       // user id of driver who accepted
+  acceptedByName?: string;
+  acceptedAt?: number;
 };
 
 export const BOOKING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -50,6 +54,7 @@ type DataState = {
   addDelivery: (d: Omit<DeliveryOrder, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   addBooking: (b: Omit<TransportBooking, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   setBookingStatus: (id: string, status: BookingStatus) => Promise<void>;
+  acceptBooking: (id: string, driverId: string, driverName: string) => Promise<void>;
   removeListing: (id: string) => Promise<void>;
   removeDelivery: (id: string) => Promise<void>;
   removeBooking: (id: string) => Promise<void>;
@@ -134,6 +139,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       async setBookingStatus(id, status) {
         const next = bookings.map((b) => (b.id === id ? { ...b, status } : b));
+        setBookings(next);
+        await persist({ listings, deliveries, bookings: next });
+      },
+      async acceptBooking(id, driverId, driverName) {
+        const next = bookings.map((b) =>
+          b.id === id && b.status === 'pending'
+            ? { ...b, status: 'accepted' as BookingStatus, acceptedBy: driverId, acceptedByName: driverName, acceptedAt: Date.now() }
+            : b,
+        );
         setBookings(next);
         await persist({ listings, deliveries, bookings: next });
       },
