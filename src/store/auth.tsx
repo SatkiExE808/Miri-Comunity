@@ -1,5 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { supabase } from '../lib/supabase';
 
 export type UserRole = 'user' | 'admin';
 
@@ -24,46 +24,22 @@ type AuthState = {
 };
 
 const AuthContext = createContext<AuthState | null>(null);
-const STORAGE_KEY = 'miri.auth.user';
-const ACCOUNTS_KEY = 'miri.auth.accounts';
 
-// Seed superadmin — created on first run if no admin exists.
-// Change the password by logging in and updating via Profile screen (TBD).
-const ADMIN_SEED = {
-  id: 'u_admin',
-  name: 'Super Admin',
-  email: 'admin@miri.local',
-  phone: '',
-  role: 'admin' as UserRole,
-  password: 'admin2026',
-};
-
-type StoredAccount = { user: User; password: string };
-
-async function readAccounts(): Promise<StoredAccount[]> {
-  const raw = await AsyncStorage.getItem(ACCOUNTS_KEY);
-  let accounts: StoredAccount[] = raw ? (JSON.parse(raw) as StoredAccount[]) : [];
-  // Back-fill 'role' for accounts written by older builds.
-  let mutated = false;
-  accounts = accounts.map((a) => {
-    if (!a.user.role) {
-      mutated = true;
-      return { ...a, user: { ...a.user, role: 'user' } };
-    }
-    return a;
-  });
-  // Seed superadmin if none exists.
-  if (!accounts.some((a) => a.user.role === 'admin')) {
-    mutated = true;
-    const { password, ...adminUser } = ADMIN_SEED;
-    accounts.push({ user: adminUser, password });
-  }
-  if (mutated) await writeAccounts(accounts);
-  return accounts;
-}
-
-async function writeAccounts(accounts: StoredAccount[]) {
-  await AsyncStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+async function loadProfile(id: string, email: string): Promise<User | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, phone, role, banned')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    id: data.id,
+    name: data.name,
+    email,
+    phone: data.phone ?? '',
+    role: (data.role ?? 'user') as UserRole,
+    banned: !!data.banned,
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -71,13 +47,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
     (async () => {
-      // Trigger account seeding (creates admin on first run).
-      await readAccounts();
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw));
-      setLoading(false);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const profile = await loadProfile(session.user.id, session.user.email ?? '');
+        if (mounted) setUser(profile);
+      }
+      if (mounted) setLoading(false);
     })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
+      if (session?.user) {
+        const profile = await loadProfile(session.user.id, session.user.email ?? '');
+        setUser(profile);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const value = useMemo<AuthState>(
@@ -86,52 +80,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       isAdmin: user?.role === 'admin',
       async register({ name, email, phone, password }) {
-        const accounts = await readAccounts();
-        if (accounts.some((a) => a.user.email.toLowerCase() === email.toLowerCase())) {
-          throw new Error('An account with this email already exists.');
-        }
-        const newUser: User = {
-          id: `u_${Date.now()}`,
-          name: name.trim(),
+        const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
-          phone: phone.trim(),
-          role: 'user',
-        };
-        accounts.push({ user: newUser, password });
-        await writeAccounts(accounts);
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-        setUser(newUser);
+          password,
+          options: { data: { name: name.trim(), phone: phone.trim() } },
+        });
+        if (error) throw new Error(error.message);
+        // If email confirmation is OFF the session is established immediately;
+        // if it's ON the user must confirm via email first.
+        if (data.session?.user) {
+          const profile = await loadProfile(data.session.user.id, data.session.user.email ?? '');
+          setUser(profile);
+        }
       },
       async login({ email, password }) {
-        const accounts = await readAccounts();
-        const match = accounts.find(
-          (a) => a.user.email.toLowerCase() === email.toLowerCase() && a.password === password,
-        );
-        if (!match) throw new Error('Invalid email or password.');
-        if (match.user.banned) throw new Error('This account has been banned.');
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(match.user));
-        setUser(match.user);
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (error) throw new Error(error.message);
+        const profile = await loadProfile(data.user.id, data.user.email ?? '');
+        if (!profile) throw new Error('Account profile not found.');
+        if (profile.banned) {
+          await supabase.auth.signOut();
+          throw new Error('This account has been banned.');
+        }
+        setUser(profile);
       },
       async logout() {
-        await AsyncStorage.removeItem(STORAGE_KEY);
+        await supabase.auth.signOut();
         setUser(null);
       },
       async listUsers() {
-        const accounts = await readAccounts();
-        return accounts.map((a) => a.user);
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, name, phone, role, banned')
+          .order('created_at', { ascending: false });
+        if (error) throw new Error(error.message);
+        return (data ?? []).map((d) => ({
+          id: d.id,
+          name: d.name,
+          email: '',
+          phone: d.phone ?? '',
+          role: (d.role ?? 'user') as UserRole,
+          banned: !!d.banned,
+        }));
       },
       async setUserBanned(id, banned) {
-        const accounts = await readAccounts();
-        const next = accounts.map((a) =>
-          a.user.id === id ? { ...a, user: { ...a.user, banned } } : a,
-        );
-        await writeAccounts(next);
-        // If the currently logged-in account is the one being banned, sign out.
+        const { error } = await supabase
+          .from('profiles')
+          .update({ banned })
+          .eq('id', id);
+        if (error) throw new Error(error.message);
         if (user?.id === id && banned) {
-          await AsyncStorage.removeItem(STORAGE_KEY);
+          await supabase.auth.signOut();
           setUser(null);
         }
-        return next.map((a) => a.user);
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, name, phone, role, banned')
+          .order('created_at', { ascending: false });
+        return (data ?? []).map((d) => ({
+          id: d.id,
+          name: d.name,
+          email: '',
+          phone: d.phone ?? '',
+          role: (d.role ?? 'user') as UserRole,
+          banned: !!d.banned,
+        }));
       },
     }),
     [user, loading],

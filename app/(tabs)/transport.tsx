@@ -56,13 +56,15 @@ export default function Transport() {
   }, []);
 
   // Auto-expire pending bookings that have aged past the timeout.
+  // Only the owner can update their booking (RLS), so only run for our own.
   useEffect(() => {
+    if (!user) return;
     bookings.forEach((b) => {
-      if (b.status === 'pending' && now - b.createdAt >= BOOKING_TIMEOUT_MS) {
+      if (b.userId === user.id && b.status === 'pending' && now - b.createdAt >= BOOKING_TIMEOUT_MS) {
         setBookingStatus(b.id, 'expired');
       }
     });
-  }, [now, bookings, setBookingStatus]);
+  }, [now, bookings, setBookingStatus, user]);
 
   const myBookings = bookings.filter((b) => b.userId === user?.id);
   const openRequests = bookings.filter(
