@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, Field, Screen } from '../../src/components/ui';
 import { useAuth } from '../../src/store/auth';
-import { useData, type TransportBooking } from '../../src/store/data';
+import { BOOKING_TIMEOUT_MS, useData, type TransportBooking } from '../../src/store/data';
 import { colors, radius, spacing } from '../../src/theme';
 
 type Vehicle = 'motorcycle' | 'car';
@@ -13,16 +13,56 @@ const vehicles: { key: Vehicle; label: string; icon: keyof typeof Ionicons.glyph
   { key: 'car', label: 'Car', icon: 'car-outline', subtitle: 'Up to 4 passengers, AC', rate: 'from RM 12' },
 ];
 
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatRelative(ts: number, now: number): string {
+  const diff = Math.max(0, now - ts);
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins === 1) return '1 min ago';
+  if (mins < 60) return `${mins} mins ago`;
+  const hrs = Math.floor(mins / 60);
+  return hrs === 1 ? '1 hour ago' : `${hrs} hours ago`;
+}
+
+function timeRemaining(ts: number, now: number): string {
+  const left = BOOKING_TIMEOUT_MS - (now - ts);
+  if (left <= 0) return '0:00';
+  const mins = Math.floor(left / 60000);
+  const secs = Math.floor((left % 60000) / 1000);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 export default function Transport() {
   const { user } = useAuth();
-  const { bookings, addBooking } = useData();
+  const { bookings, addBooking, setBookingStatus } = useData();
   const [vehicle, setVehicle] = useState<Vehicle>('motorcycle');
   const [pickup, setPickup] = useState('');
   const [dropoff, setDropoff] = useState('');
   const [when, setWhen] = useState('Now');
   const [passengers, setPassengers] = useState('1');
+  const [offer, setOffer] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Tick every second so countdown + auto-expire stay current.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Auto-expire pending bookings that have aged past the timeout.
+  useEffect(() => {
+    bookings.forEach((b) => {
+      if (b.status === 'pending' && now - b.createdAt >= BOOKING_TIMEOUT_MS) {
+        setBookingStatus(b.id, 'expired');
+      }
+    });
+  }, [now, bookings, setBookingStatus]);
 
   const myBookings = bookings.filter((b) => b.userId === user?.id);
 
@@ -36,6 +76,15 @@ export default function Transport() {
       Alert.alert('Too many passengers', 'A motorcycle can only carry 1 passenger.');
       return;
     }
+    let offerAmount: number | undefined;
+    if (offer.trim()) {
+      const parsed = parseFloat(offer.trim());
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        Alert.alert('Invalid offer', 'Enter a positive amount in RM, or leave it blank.');
+        return;
+      }
+      offerAmount = Math.round(parsed * 100) / 100;
+    }
     if (!user) return;
     try {
       setBusy(true);
@@ -45,16 +94,25 @@ export default function Transport() {
         dropoff: dropoff.trim(),
         when: when.trim() || 'Now',
         passengers: pax,
+        offerAmount,
         notes: notes.trim() || undefined,
         userId: user.id,
       });
       setPickup('');
       setDropoff('');
       setNotes('');
-      Alert.alert('Ride requested', 'We are finding a driver near you.');
+      setOffer('');
+      Alert.alert('Ride requested', 'Searching for a driver. Request will auto-cancel in 10 minutes if no driver accepts.');
     } finally {
       setBusy(false);
     }
+  }
+
+  function confirmCancel(b: TransportBooking) {
+    Alert.alert('Cancel this ride?', `${b.pickup} → ${b.dropoff}`, [
+      { text: 'Keep searching', style: 'cancel' },
+      { text: 'Cancel ride', style: 'destructive', onPress: () => setBookingStatus(b.id, 'cancelled') },
+    ]);
   }
 
   return (
@@ -95,6 +153,13 @@ export default function Transport() {
               <Field label="Passengers" keyboardType="number-pad" value={passengers} onChangeText={setPassengers} placeholder="1" />
             )}
             <Field
+              label="Offer amount (RM, optional)"
+              keyboardType="decimal-pad"
+              value={offer}
+              onChangeText={setOffer}
+              placeholder="e.g. 15"
+            />
+            <Field
               label="Notes for driver (optional)"
               value={notes}
               onChangeText={setNotes}
@@ -113,7 +178,7 @@ export default function Transport() {
             ) : (
               <View style={{ gap: spacing.sm }}>
                 {myBookings.map((b) => (
-                  <BookingRow key={b.id} booking={b} />
+                  <BookingRow key={b.id} booking={b} now={now} onCancel={() => confirmCancel(b)} />
                 ))}
               </View>
             )}
@@ -124,21 +189,46 @@ export default function Transport() {
   );
 }
 
-function BookingRow({ booking }: { booking: TransportBooking }) {
+function BookingRow({ booking, now, onCancel }: { booking: TransportBooking; now: number; onCancel: () => void }) {
+  const isPending = booking.status === 'pending';
+  const isCancelled = booking.status === 'cancelled' || booking.status === 'expired';
+  const statusColor = isCancelled ? colors.muted : isPending ? colors.accent : colors.primary;
+
   return (
     <View style={styles.row}>
-      <View style={styles.iconBubble}>
-        <Ionicons name={booking.vehicle === 'car' ? 'car-outline' : 'bicycle-outline'} size={20} color={colors.primary} />
+      <View style={styles.headerRow}>
+        <View style={styles.iconBubble}>
+          <Ionicons name={booking.vehicle === 'car' ? 'car-outline' : 'bicycle-outline'} size={20} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontWeight: '700', color: colors.text }} numberOfLines={1}>
+            {booking.pickup} → {booking.dropoff}
+          </Text>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>
+            {booking.vehicle} · {booking.when} · {booking.passengers} pax
+            {booking.offerAmount != null ? ` · RM ${booking.offerAmount.toFixed(2)}` : ''}
+          </Text>
+        </View>
+        <Text style={[styles.status, { color: statusColor }]}>{booking.status}</Text>
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontWeight: '700', color: colors.text }} numberOfLines={1}>
-          {booking.pickup} → {booking.dropoff}
+
+      <View style={styles.metaRow}>
+        <Text style={styles.metaText}>
+          <Ionicons name="time-outline" size={12} color={colors.muted} /> Requested {formatTime(booking.createdAt)} · {formatRelative(booking.createdAt, now)}
         </Text>
-        <Text style={{ color: colors.muted, fontSize: 12 }}>
-          {booking.vehicle} · {booking.when} · {booking.passengers} pax
-        </Text>
+        {isPending && (
+          <Text style={[styles.metaText, { color: colors.accent, fontWeight: '700' }]}>
+            Auto-cancel in {timeRemaining(booking.createdAt, now)}
+          </Text>
+        )}
       </View>
-      <Text style={styles.status}>{booking.status}</Text>
+
+      {isPending && (
+        <Pressable onPress={onCancel} style={styles.cancelBtn}>
+          <Ionicons name="close-circle-outline" size={16} color="#dc2626" />
+          <Text style={{ color: '#dc2626', fontWeight: '700' }}>Cancel search</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -152,14 +242,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
     backgroundColor: '#fff',
     borderRadius: radius.md,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   iconBubble: {
     width: 36,
@@ -171,8 +264,29 @@ const styles = StyleSheet.create({
   },
   status: {
     fontSize: 11,
-    color: colors.accent,
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  metaText: {
+    color: colors.muted,
+    fontSize: 11,
+  },
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    backgroundColor: '#fef2f2',
   },
 });

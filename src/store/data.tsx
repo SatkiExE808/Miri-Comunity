@@ -24,6 +24,8 @@ export type DeliveryOrder = {
   status: 'pending' | 'accepted' | 'completed';
 };
 
+export type BookingStatus = 'pending' | 'accepted' | 'completed' | 'cancelled' | 'expired';
+
 export type TransportBooking = {
   id: string;
   vehicle: 'motorcycle' | 'car';
@@ -32,10 +34,13 @@ export type TransportBooking = {
   when: string;
   passengers: number;
   notes?: string;
+  offerAmount?: number;
   userId: string;
   createdAt: number;
-  status: 'pending' | 'accepted' | 'completed';
+  status: BookingStatus;
 };
+
+export const BOOKING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 type DataState = {
   listings: Listing[];
@@ -44,6 +49,7 @@ type DataState = {
   addListing: (l: Omit<Listing, 'id' | 'createdAt'>) => Promise<void>;
   addDelivery: (d: Omit<DeliveryOrder, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   addBooking: (b: Omit<TransportBooking, 'id' | 'createdAt' | 'status'>) => Promise<void>;
+  setBookingStatus: (id: string, status: BookingStatus) => Promise<void>;
 };
 
 const DataContext = createContext<DataState | null>(null);
@@ -119,6 +125,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       async addBooking(b) {
         const item: TransportBooking = { ...b, id: `b_${Date.now()}`, createdAt: Date.now(), status: 'pending' };
         const next = [item, ...bookings];
+        setBookings(next);
+        await persist({ listings, deliveries, bookings: next });
+      },
+      async setBookingStatus(id, status) {
+        const next = bookings.map((b) => (b.id === id ? { ...b, status } : b));
         setBookings(next);
         await persist({ listings, deliveries, bookings: next });
       },
