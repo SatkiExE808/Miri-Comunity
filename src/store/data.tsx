@@ -50,6 +50,10 @@ type DataState = {
   addDelivery: (d: Omit<DeliveryOrder, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   addBooking: (b: Omit<TransportBooking, 'id' | 'createdAt' | 'status'>) => Promise<void>;
   setBookingStatus: (id: string, status: BookingStatus) => Promise<void>;
+  removeListing: (id: string) => Promise<void>;
+  removeDelivery: (id: string) => Promise<void>;
+  removeBooking: (id: string) => Promise<void>;
+  removeUserContent: (userId: string) => Promise<void>;
 };
 
 const DataContext = createContext<DataState | null>(null);
@@ -132,6 +136,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const next = bookings.map((b) => (b.id === id ? { ...b, status } : b));
         setBookings(next);
         await persist({ listings, deliveries, bookings: next });
+      },
+      async removeListing(id) {
+        const next = listings.filter((l) => l.id !== id);
+        setListings(next);
+        await persist({ listings: next, deliveries, bookings });
+      },
+      async removeDelivery(id) {
+        const next = deliveries.filter((d) => d.id !== id);
+        setDeliveries(next);
+        await persist({ listings, deliveries: next, bookings });
+      },
+      async removeBooking(id) {
+        const next = bookings.filter((b) => b.id !== id);
+        setBookings(next);
+        await persist({ listings, deliveries, bookings: next });
+      },
+      async removeUserContent(userId) {
+        const nextListings = listings.filter((l) => l.sellerId !== userId);
+        const nextDeliveries = deliveries.filter((d) => d.userId !== userId);
+        const nextBookings = bookings.filter((b) => b.userId !== userId);
+        setListings(nextListings);
+        setDeliveries(nextDeliveries);
+        setBookings(nextBookings);
+        await persist({ listings: nextListings, deliveries: nextDeliveries, bookings: nextBookings });
       },
     }),
     [listings, deliveries, bookings],
